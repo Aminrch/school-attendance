@@ -2056,7 +2056,7 @@ function AttendancePage({
           </p>
         </div>
 
-        {staff.lengh === 0 ? (
+        {staff.length === 0 ? (
           <div className="p-12 text-center text-sm text-slate-400">
             عامل اجرایی پیدا نشد.
           </div>
