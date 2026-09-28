@@ -526,49 +526,45 @@ export default function HomePage() {
     staffAttendanceMap,
   ]);
 
-  async function loadData(date = selectedDate) {
+  async function loadStaticData() {
     setLoading(true);
     setError("");
-
+  
     const [
       teachersResult,
       staffResult,
       scheduleResult,
-      attendanceResult,
-      staffAttendanceResult,
     ] = await Promise.all([
       supabase
         .from("teachers")
-        .select("*")
+        .select(
+          "id,first_name,last_name,phone,subject,is_active,created_at",
+        )
+        .eq("is_active", true)
         .order("first_name", {
           ascending: true,
         }),
-
+  
       supabase
         .from("staff")
-        .select("*")
+        .select(
+          "id,name,position,phone,is_active,created_at",
+        )
+        .eq("is_active", true)
         .order("name", {
           ascending: true,
         }),
-
+  
       supabase
         .from("weekly_schedule")
-        .select("*")
+        .select(
+          "id,class_name,day_of_week,period,subject,teacher_name,is_active",
+        )
         .eq("is_active", true)
         .order("day_of_week")
         .order("period"),
-
-      supabase
-        .from("attendance")
-        .select("*")
-        .eq("attendance_date", date),
-
-      supabase
-        .from("staff_attendance")
-        .select("*")
-        .eq("attendance_date", date),
     ]);
-
+  
     if (teachersResult.error) {
       setError(
         teachersResult.error.message ||
@@ -577,7 +573,7 @@ export default function HomePage() {
       setLoading(false);
       return;
     }
-
+  
     if (staffResult.error) {
       setError(
         staffResult.error.message ||
@@ -586,7 +582,7 @@ export default function HomePage() {
       setLoading(false);
       return;
     }
-
+  
     if (scheduleResult.error) {
       setError(
         scheduleResult.error.message ||
@@ -595,7 +591,45 @@ export default function HomePage() {
       setLoading(false);
       return;
     }
-
+  
+    setTeachers(
+      (teachersResult.data ?? []) as Teacher[],
+    );
+  
+    setStaff(
+      (staffResult.data ?? []) as Staff[],
+    );
+  
+    setSchedules(
+      (scheduleResult.data ?? []) as WeeklySchedule[],
+    );
+  
+    setLoading(false);
+  }
+  
+  async function loadAttendanceData(date: string) {
+    setLoading(true);
+    setError("");
+  
+    const [
+      attendanceResult,
+      staffAttendanceResult,
+    ] = await Promise.all([
+      supabase
+        .from("attendance")
+        .select(
+          "id,teacher_id,attendance_date,status,check_in,late_minutes,updated_at",
+        )
+        .eq("attendance_date", date),
+  
+      supabase
+        .from("staff_attendance")
+        .select(
+          "id,staff_id,attendance_date,status,check_in,late_minutes,updated_at",
+        )
+        .eq("attendance_date", date),
+    ]);
+  
     if (attendanceResult.error) {
       setError(
         attendanceResult.error.message ||
@@ -604,7 +638,7 @@ export default function HomePage() {
       setLoading(false);
       return;
     }
-
+  
     if (staffAttendanceResult.error) {
       setError(
         staffAttendanceResult.error.message ||
@@ -613,26 +647,16 @@ export default function HomePage() {
       setLoading(false);
       return;
     }
-
-    setTeachers(
-      (teachersResult.data ?? []) as Teacher[],
-    );
-
-    setStaff((staffResult.data ?? []) as Staff[]);
-
-    setSchedules(
-      (scheduleResult.data ?? []) as WeeklySchedule[],
-    );
-
+  
     setAttendance(
       (attendanceResult.data ?? []) as Attendance[],
     );
-
+  
     setStaffAttendance(
       (staffAttendanceResult.data ??
         []) as StaffAttendance[],
     );
-
+  
     setLoading(false);
   }
 
@@ -661,17 +685,24 @@ export default function HomePage() {
       );
     }
 
-  const checkIn =
+    const checkIn =
     status === "absent"
-    ? null
-    : existing?.check_in ??
-      (() => {
-        const now = new Date();
-
-        return `${String(now.getHours()).padStart(2, "0")}:${String(
-          now.getMinutes()
-        ).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
-      })();
+      ? null
+      : existing?.check_in ??
+        (() => {
+          const now = new Date();
+  
+          return `${String(now.getHours()).padStart(
+            2,
+            "0",
+          )}:${String(now.getMinutes()).padStart(
+            2,
+            "0",
+          )}:${String(now.getSeconds()).padStart(
+            2,
+            "0",
+          )}`;
+        })();
 
     const payload = {
       teacher_id: teacher.id,
@@ -889,7 +920,11 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    loadData();
+    loadStaticData();
+  }, []);
+  
+  useEffect(() => {
+    loadAttendanceData(selectedDate);
   }, [selectedDate]);
 
   useEffect(() => {
@@ -2663,32 +2698,40 @@ function ReportsPage({
   }, [staff]);
 
   const reportRows = useMemo(() => {
+    const recordsMap = new Map<string, Attendance[]>();
+  
+    attendance.forEach((record) => {
+      const current =
+        recordsMap.get(record.teacher_id) ?? [];
+  
+      current.push(record);
+      recordsMap.set(record.teacher_id, current);
+    });
+  
     return teachers.map((teacher) => {
-      const records = attendance.filter(
-        (item) =>
-          item.teacher_id ===
-          teacher.id,
-      );
-
+      const records =
+        recordsMap.get(teacher.id) ?? [];
+  
       let present = 0;
       let late = 0;
       let absent = 0;
       let lateMinutes = 0;
-
+  
       records.forEach((record) => {
-        if (record.status === "present")
+        if (record.status === "present") {
           present++;
-
+        }
+  
         if (record.status === "late") {
           late++;
-          lateMinutes +=
-            record.late_minutes ?? 0;
+          lateMinutes += record.late_minutes ?? 0;
         }
-
-        if (record.status === "absent")
+  
+        if (record.status === "absent") {
           absent++;
+        }
       });
-
+  
       return {
         teacher,
         present,
@@ -2701,33 +2744,43 @@ function ReportsPage({
   }, [teachers, attendance]);
 
   const staffReportRows = useMemo(() => {
+    const recordsMap = new Map<
+      string,
+      StaffAttendance[]
+    >();
+  
+    staffAttendance.forEach((record) => {
+      const current =
+        recordsMap.get(record.staff_id) ?? [];
+  
+      current.push(record);
+      recordsMap.set(record.staff_id, current);
+    });
+  
     return staff.map((item) => {
       const records =
-        staffAttendance.filter(
-          (record) =>
-            record.staff_id ===
-            item.id,
-        );
-
+        recordsMap.get(item.id) ?? [];
+  
       let present = 0;
       let late = 0;
       let absent = 0;
       let lateMinutes = 0;
-
+  
       records.forEach((record) => {
-        if (record.status === "present")
+        if (record.status === "present") {
           present++;
-
+        }
+  
         if (record.status === "late") {
           late++;
-          lateMinutes +=
-            record.late_minutes ?? 0;
+          lateMinutes += record.late_minutes ?? 0;
         }
-
-        if (record.status === "absent")
+  
+        if (record.status === "absent") {
           absent++;
+        }
       });
-
+  
       return {
         staff: item,
         present,
