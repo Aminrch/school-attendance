@@ -661,11 +661,17 @@ export default function HomePage() {
       );
     }
 
-    const checkIn =
-      status === "absent"
-        ? null
-        : existing?.check_in ??
-          new Date().toISOString();
+  const checkIn =
+    status === "absent"
+    ? null
+    : existing?.check_in ??
+      (() => {
+        const now = new Date();
+
+        return `${String(now.getHours()).padStart(2, "0")}:${String(
+          now.getMinutes()
+        ).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+      })();
 
     const payload = {
       teacher_id: teacher.id,
@@ -2050,7 +2056,7 @@ function AttendancePage({
           </p>
         </div>
 
-        {staff.length === 0 ? (
+        {staff.lengh === 0 ? (
           <div className="p-12 text-center text-sm text-slate-400">
             عامل اجرایی پیدا نشد.
           </div>
