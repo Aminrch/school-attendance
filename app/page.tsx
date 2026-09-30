@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase/client";
 
 type Page =
@@ -412,6 +413,95 @@ export default function HomePage() {
     return staff.filter((item) => item.is_active);
   }, [staff]);
 
+  function exportToExcel() {
+    const teacherRows = activeTeachers.map((teacher) => {
+      const records = reportAttendance.filter(
+        (item) => item.teacher_id === teacher.id,
+      );
+  
+      const present = records.filter(
+        (item) => item.status === "present",
+      ).length;
+  
+      const late = records.filter(
+        (item) => item.status === "late",
+      ).length;
+  
+      const absent = records.filter(
+        (item) => item.status === "absent",
+      ).length;
+  
+      const lateMinutes = records.reduce(
+        (sum, item) => sum + (item.late_minutes ?? 0),
+        0,
+      );
+  
+      return {
+        "نام": `${teacher.first_name} ${teacher.last_name}`,
+        "درس": teacher.subject ?? "-",
+        "حضور": present,
+        "تأخیر": late,
+        "غیبت": absent,
+        "مجموع دقیقه تأخیر": lateMinutes,
+      };
+    });
+  
+    const staffRows = activeStaff.map((item) => {
+      const records = reportStaffAttendance.filter(
+        (record) => record.staff_id === item.id,
+      );
+  
+      const present = records.filter(
+        (record) => record.status === "present",
+      ).length;
+  
+      const late = records.filter(
+        (record) => record.status === "late",
+      ).length;
+  
+      const absent = records.filter(
+        (record) => record.status === "absent",
+      ).length;
+  
+      const lateMinutes = records.reduce(
+        (sum, record) => sum + (record.late_minutes ?? 0),
+        0,
+      );
+  
+      return {
+        "نام": item.name,
+        "سمت": item.position ?? "-",
+        "حضور": present,
+        "تأخیر": late,
+        "غیبت": absent,
+        "مجموع دقیقه تأخیر": lateMinutes,
+      };
+    });
+  
+    const teacherSheet = XLSX.utils.json_to_sheet(teacherRows);
+    const staffSheet = XLSX.utils.json_to_sheet(staffRows);
+  
+    const workbook = XLSX.utils.book_new();
+  
+    XLSX.utils.book_append_sheet(
+      workbook,
+      teacherSheet,
+      "معلم‌ها",
+    );
+  
+    XLSX.utils.book_append_sheet(
+      workbook,
+      staffSheet,
+      "کادر اجرایی",
+    );
+  
+    const monthTitle = getMonthTitle(selectedMonth);
+  
+    XLSX.writeFile(
+      workbook,
+      `گزارش-حضور-و-غیاب-${monthTitle}.xlsx`,
+    );
+  }
   const todayDayOfWeek = useMemo(
     () => getDayOfWeek(selectedDate),
     [selectedDate],
@@ -1062,6 +1152,7 @@ export default function HomePage() {
                 onMonthChange={
                   setSelectedMonth
                 }
+                exportToExcel={exportToExcel}
               />
             )}
           </div>
@@ -2668,6 +2759,7 @@ function ReportsPage({
   month,
   loading,
   onMonthChange,
+  exportToExcel,
 }: {
   teachers: Teacher[];
   staff: Staff[];
@@ -2676,6 +2768,7 @@ function ReportsPage({
   month: string;
   loading: boolean;
   onMonthChange: (month: string) => void;
+  exportToExcel: () => void;
 }) {
   const teacherMap = useMemo(() => {
     const map = new Map<string, Teacher>();
@@ -2699,39 +2792,39 @@ function ReportsPage({
 
   const reportRows = useMemo(() => {
     const recordsMap = new Map<string, Attendance[]>();
-  
+
     attendance.forEach((record) => {
       const current =
         recordsMap.get(record.teacher_id) ?? [];
-  
+
       current.push(record);
       recordsMap.set(record.teacher_id, current);
     });
-  
+
     return teachers.map((teacher) => {
       const records =
         recordsMap.get(teacher.id) ?? [];
-  
+
       let present = 0;
       let late = 0;
       let absent = 0;
       let lateMinutes = 0;
-  
+
       records.forEach((record) => {
         if (record.status === "present") {
           present++;
         }
-  
+
         if (record.status === "late") {
           late++;
           lateMinutes += record.late_minutes ?? 0;
         }
-  
+
         if (record.status === "absent") {
           absent++;
         }
       });
-  
+
       return {
         teacher,
         present,
@@ -2748,39 +2841,39 @@ function ReportsPage({
       string,
       StaffAttendance[]
     >();
-  
+
     staffAttendance.forEach((record) => {
       const current =
         recordsMap.get(record.staff_id) ?? [];
-  
+
       current.push(record);
       recordsMap.set(record.staff_id, current);
     });
-  
+
     return staff.map((item) => {
       const records =
         recordsMap.get(item.id) ?? [];
-  
+
       let present = 0;
       let late = 0;
       let absent = 0;
       let lateMinutes = 0;
-  
+
       records.forEach((record) => {
         if (record.status === "present") {
           present++;
         }
-  
+
         if (record.status === "late") {
           late++;
           lateMinutes += record.late_minutes ?? 0;
         }
-  
+
         if (record.status === "absent") {
           absent++;
         }
       });
-  
+
       return {
         staff: item,
         present,
@@ -2865,22 +2958,32 @@ function ReportsPage({
             </p>
           </div>
 
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <span className="text-xs font-medium text-slate-500">
-              ماه:
-            </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={exportToExcel}
+              className="rounded-2xl border border-slate-200 bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              دانلود Excel
+            </button>
 
-            <input
-              type="month"
-              value={month}
-              onChange={(event) =>
-                onMonthChange(
-                  event.target.value,
-                )
-              }
-              className="bg-transparent text-sm font-semibold outline-none"
-            />
-          </label>
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <span className="text-xs font-medium text-slate-500">
+                ماه:
+              </span>
+
+              <input
+                type="month"
+                value={month}
+                onChange={(event) =>
+                  onMonthChange(
+                    event.target.value,
+                  )
+                }
+                className="bg-transparent text-sm font-semibold outline-none"
+              />
+            </label>
+          </div>
         </div>
       </section>
 
@@ -2969,54 +3072,36 @@ function ReportsPage({
                   >
                     <td className="px-5 py-4">
                       <p className="font-semibold text-slate-800">
-                        {
-                          row.teacher
-                            .first_name
-                        }{" "}
-                        {
-                          row.teacher
-                            .last_name
-                        }
+                        {row.teacher.first_name}{" "}
+                        {row.teacher.last_name}
                       </p>
 
                       <p className="mt-1 text-xs text-slate-400">
-                        {
-                          row.teacher
-                            .subject
-                        }
+                        {row.teacher.subject}
                       </p>
                     </td>
 
                     <td className="px-5 py-4">
                       <Badge
-                        value={
-                          row.present
-                        }
+                        value={row.present}
                         className="green"
                       />
                     </td>
 
                     <td className="px-5 py-4">
                       <Badge
-                        value={
-                          row.late
-                        }
+                        value={row.late}
                         className="amber"
                       />
                     </td>
 
                     <td className="px-5 py-4 text-sm font-semibold text-slate-700">
-                      {
-                        row.lateMinutes
-                      }{" "}
-                      دقیقه
+                      {row.lateMinutes} دقیقه
                     </td>
 
                     <td className="px-5 py-4">
                       <Badge
-                        value={
-                          row.absent
-                        }
+                        value={row.absent}
                         className="red"
                       />
                     </td>
@@ -3092,42 +3177,30 @@ function ReportsPage({
                       </td>
 
                       <td className="px-5 py-4 text-sm text-slate-500">
-                        {
-                          row.staff
-                            .position
-                        }
+                        {row.staff.position}
                       </td>
 
                       <td className="px-5 py-4">
                         <Badge
-                          value={
-                            row.present
-                          }
+                          value={row.present}
                           className="green"
                         />
                       </td>
 
                       <td className="px-5 py-4">
                         <Badge
-                          value={
-                            row.late
-                          }
+                          value={row.late}
                           className="amber"
                         />
                       </td>
 
                       <td className="px-5 py-4 text-sm font-semibold text-slate-700">
-                        {
-                          row.lateMinutes
-                        }{" "}
-                        دقیقه
+                        {row.lateMinutes} دقیقه
                       </td>
 
                       <td className="px-5 py-4">
                         <Badge
-                          value={
-                            row.absent
-                          }
+                          value={row.absent}
                           className="red"
                         />
                       </td>
@@ -3165,8 +3238,7 @@ function ReportsPage({
                 (item) => ({
                   type: "teacher" as const,
                   id: item.id,
-                  date:
-                    item.attendance_date,
+                  date: item.attendance_date,
                   status: item.status,
                   lateMinutes:
                     item.late_minutes,
@@ -3192,8 +3264,7 @@ function ReportsPage({
                 (item) => ({
                   type: "staff" as const,
                   id: item.id,
-                  date:
-                    item.attendance_date,
+                  date: item.attendance_date,
                   status: item.status,
                   lateMinutes:
                     item.late_minutes,
@@ -3230,22 +3301,15 @@ function ReportsPage({
                     </div>
 
                     <p className="mt-1 text-xs text-slate-400">
-                      {formatDate(
-                        item.date,
-                      )}
+                      {formatDate(item.date)}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    {item.status ===
-                      "late" &&
-                      item.lateMinutes !==
-                        null && (
+                    {item.status === "late" &&
+                      item.lateMinutes !== null && (
                         <span className="text-xs text-slate-500">
-                          {
-                            item.lateMinutes
-                          }{" "}
-                          دقیقه تأخیر
+                          {item.lateMinutes} دقیقه تأخیر
                         </span>
                       )}
 
@@ -3254,9 +3318,7 @@ function ReportsPage({
                         item.status,
                       )}`}
                     >
-                      {statusLabel(
-                        item.status,
-                      )}
+                      {statusLabel(item.status)}
                     </span>
                   </div>
                 </div>
